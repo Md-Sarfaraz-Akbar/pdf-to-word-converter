@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF to Word Converter with OCR</title>
+    <!-- Tailwind CSS for styling utilities -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- pdf.js for reading and rendering PDF files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- tesseract.js for client-side Optical Character Recognition (OCR) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+    <!-- Custom Google Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Using a modern font and setting a base for the app */
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        /* Custom animation for the upload icon */
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+        .float-animation {
+            animation: float 3s ease-in-out infinite;
+        }
+
+        /* Custom animation for the progress bar shimmer effect */
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        .shimmer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        /* Custom modal styles for non-blocking alerts */
+        .custom-modal {
+            transition: opacity 0.3s ease;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="container bg-white/95 backdrop-blur-xl rounded-2xl p-6 sm:p-10 shadow-2xl max-w-2xl w-full border border-white/20">
+        <!-- Header Section -->
+        <div class="header text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-transparent bg-clip-text mb-2">PDF to Word Converter</h1>
+            <p class="text-gray-600 text-base sm:text-lg font-medium">Convert PDFs to editable documents with advanced client-side OCR</p>
+        </div>
+
+        <!-- File Upload Area -->
+        <div class="upload-area border-3 border-dashed border-gray-300 rounded-xl p-8 sm:p-12 text-center transition-all duration-300 bg-gray-50 hover:bg-gray-100 hover:border-indigo-500 hover:shadow-lg hover:-translate-y-1 mb-6 cursor-pointer relative" id="uploadArea">
+            <div class="upload-icon text-5xl text-indigo-500 mb-4 block float-animation">📄</div>
+            <div class="upload-text text-xl text-gray-800 font-semibold mb-2">Drop your PDF file here</div>
+            <p class="upload-subtext text-gray-500">or click to browse (Max 50MB)</p>
+            <input type="file" class="file-input hidden" id="fileInput" accept=".pdf">
+        </div>
+
+        <!-- File Information Display -->
+        <div class="file-info hidden bg-blue-50 border-l-4 border-blue-500 rounded-md p-4 mb-6" id="fileInfo">
+            <h3 class="font-semibold text-blue-800 mb-2">📋 File Information</h3>
+            <p id="fileName" class="text-sm text-blue-700"></p>
+            <p id="fileSize" class="text-sm text-blue-700"></p>
+            <p id="pageCount" class="text-sm text-blue-700"></p>
+        </div>
+
+        <!-- Options: OCR Language and Output Format -->
+        <div class="options grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
+            <div class="option-group">
+                <label for="ocrLanguage" class="block mb-2 font-semibold text-gray-700">OCR Language</label>
+                <select id="ocrLanguage" class="w-full p-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition">
+                    <option value="eng">English</option>
+                    <option value="spa">Spanish</option>
+                    <option value="fra">French</option>
+                    <option value="deu">German</option>
+                    <option value="ita">Italian</option>
+                    <option value="por">Portuguese</option>
+                    <option value="rus">Russian</option>
+                    <option value="chi_sim">Chinese (Simplified)</option>
+                    <option value="jpn">Japanese</option>
+                    <option value="kor">Korean</option>
+                </select>
+            </div>
+            <div class="option-group">
+                <label for="outputFormat" class="block mb-2 font-semibold text-gray-700">Output Format</label>
+                <select id="outputFormat" class="w-full p-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition">
+                    <option value="docx">Word (.doc)</option>
+                    <option value="txt">Plain Text (.txt)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Convert Button -->
+        <button class="convert-btn w-full p-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg font-semibold text-lg uppercase tracking-wider transition-all duration-300 hover:-translate-y-1 hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none" id="convertBtn" disabled>
+            🚀 Convert
+        </button>
+
+        <!-- Progress Bar and Status -->
+        <div class="progress-container hidden my-6" id="progressContainer">
+            <div class="progress-bar w-full h-2.5 bg-gray-200 rounded-full overflow-hidden mb-2">
+                <div class="progress-fill h-full bg-gradient-to-r from-indigo-500 to-purple-600 w-0 transition-width duration-300 relative shimmer" id="progressFill"></div>
+            </div>
+            <div class="progress-text text-center text-gray-600 font-medium" id="progressText">Initializing...</div>
+        </div>
+
+        <!-- Text Preview Area -->
+        <div class="preview-area hidden bg-gray-50 rounded-lg p-4 my-6 max-h-60 overflow-y-auto border border-gray-200" id="previewArea">
+            <h3 class="mb-3 font-semibold text-gray-800">📖 Document Preview</h3>
+            <div class="preview-content text-sm text-gray-700 whitespace-pre-wrap font-serif" id="previewContent"></div>
+        </div>
+
+        <!-- Result and Download Area -->
+        <div class="result-area hidden bg-green-50 border-2 border-green-500 rounded-lg p-6 text-center" id="resultArea">
+            <div class="success-icon text-5xl text-green-500 mb-3">✅</div>
+            <h3 class="text-xl font-semibold text-green-800 mb-2">Conversion Complete!</h3>
+            <p class="text-green-700 mb-4">Your document is ready for download.</p>
+            <button class="download-btn bg-green-500 text-white border-none py-3 px-6 rounded-lg font-semibold cursor-pointer transition-all duration-300 hover:bg-green-600 hover:-translate-y-1 hover:shadow-lg" id="downloadBtn">📥 Download Document</button>
+        </div>
+    </div>
+
+    <!-- Custom Modal for Notifications -->
+    <div id="customModal" class="custom-modal fixed top-0 left-0 w-full h-full bg-black/40 flex items-center justify-center p-4 opacity-0 pointer-events-none z-50">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full text-center transform scale-95 transition-transform duration-300">
+            <h3 id="modalTitle" class="text-xl font-bold text-gray-800 mb-2">Notice</h3>
+            <p id="modalMessage" class="text-gray-600 mb-6">This is a notification.</p>
+            <button id="modalCloseBtn" class="bg-indigo-500 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-600 transition">OK</button>
+        </div>
+    </div>
+
+    <script>
+        // Set the workerSrc for pdf.js. This is required for it to work correctly.
+        // We point it to the same CDN location.
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+        }
+
+        class PDFToWordConverter {
+            constructor() {
+                this.selectedFile = null;
+                this.convertedContent = '';
+                this.elements = {
+                    uploadArea: document.getElementById('uploadArea'),
+                    fileInput: document.getElementById('fileInput'),
+                    convertBtn: document.getElementById('convertBtn'),
+                    downloadBtn: document.getElementById('downloadBtn'),
+                    fileInfo: document.getElementById('fileInfo'),
+                    fileName: document.getElementById('fileName'),
+                    fileSize: document.getElementById('fileSize'),
+                    pageCount: document.getElementById('pageCount'),
+                    progressContainer: document.getElementById('progressContainer'),
+                    progressFill: document.getElementById('progressFill'),
+                    progressText: document.getElementById('progressText'),
+                    previewArea: document.getElementById('previewArea'),
+                    previewContent: document.getElementById('previewContent'),
+                    resultArea: document.getElementById('resultArea'),
+                    ocrLanguage: document.getElementById('ocrLanguage'),
+                    outputFormat: document.getElementById('outputFormat'),
+                    modal: document.getElementById('customModal'),
+                    modalTitle: document.getElementById('modalTitle'),
+                    modalMessage: document.getElementById('modalMessage'),
+                    modalCloseBtn: document.getElementById('modalCloseBtn'),
+                };
+                this.initializeEventListeners();
+            }
+
+            // Centralized event listener initialization
+            initializeEventListeners() {
+                const { uploadArea, fileInput, convertBtn, downloadBtn, modalCloseBtn } = this.elements;
+                uploadArea.addEventListener('click', () => fileInput.click());
+                uploadArea.addEventListener('dragover', this.handleDragOver.bind(this));
+                uploadArea.addEventListener('dragleave', this.handleDragLeave.bind(this));
+                uploadArea.addEventListener('drop', this.handleDrop.bind(this));
+                fileInput.addEventListener('change', this.handleFileSelect.bind(this));
+                convertBtn.addEventListener('click', this.convertPDF.bind(this));
+                downloadBtn.addEventListener('click', this.downloadFile.bind(this));
+                modalCloseBtn.addEventListener('click', () => this.showModal(false));
+            }
+
+            // --- UI and Helper Methods ---
+
+            showModal(visible, title = 'Notice', message = '') {
+                const { modal, modalTitle, modalMessage } = this.elements;
+                if (visible) {
+                    modalTitle.textContent = title;
+                    modalMessage.textContent = message;
+                    modal.classList.remove('opacity-0', 'pointer-events-none');
+                    modal.querySelector('div').classList.remove('scale-95');
+                } else {
+                    modal.classList.add('opacity-0', 'pointer-events-none');
+                    modal.querySelector('div').classList.add('scale-95');
+                }
+            }
+
+            handleDragOver(e) {
+                e.preventDefault();
+                this.elements.uploadArea.classList.add('border-indigo-500', 'bg-indigo-50');
+            }
+
+            handleDragLeave(e) {
+                e.preventDefault();
+                this.elements.uploadArea.classList.remove('border-indigo-500', 'bg-indigo-50');
+            }
+
+            handleDrop(e) {
+                e.preventDefault();
+                this.handleDragLeave(e);
+                const files = e.dataTransfer.files;
+                if (files.length > 0) this.processFile(files[0]);
+            }
+
+            handleFileSelect(e) {
+                if (e.target.files.length > 0) this.processFile(e.target.files[0]);
+            }
+
+            async processFile(file) {
+                if (file.type !== 'application/pdf') {
+                    this.showModal(true, 'Invalid File Type', 'Please select a valid PDF file.');
+                    return;
+                }
+                if (file.size > 50 * 1024 * 1024) { // 50MB limit
+                    this.showModal(true, 'File Too Large', 'File size must be less than 50MB.');
+                    return;
+                }
+                this.selectedFile = file;
+                this.elements.convertBtn.disabled = false;
+                this.elements.resultArea.classList.add('hidden');
+                this.elements.previewArea.classList.add('hidden');
+                await this.displayFileInfo(file);
+            }
+
+            async displayFileInfo(file) {
+                const { fileInfo, fileName, fileSize, pageCount } = this.elements;
+                fileName.textContent = `📄 Name: ${file.name}`;
+                fileSize.textContent = `💾 Size: ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+                pageCount.textContent = `📑 Pages: Determining...`;
+                fileInfo.classList.remove('hidden');
+
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    pageCount.textContent = `📑 Pages: ${pdf.numPages}`;
+                } catch (error) {
+                    console.error('Error getting page count:', error);
+                    pageCount.textContent = `📑 Pages: Could not determine`;
+                    this.showModal(true, 'PDF Error', `Could not read the PDF file. It might be corrupted. Error: ${error.message}`);
+                }
+            }
+            
+            updateProgress(percentage, text) {
+                this.elements.progressFill.style.width = `${percentage}%`;
+                this.elements.progressText.textContent = text;
+            }
+
+            // --- Core Conversion Logic ---
+
+            async convertPDF() {
+                if (!this.selectedFile) return;
+
+                const { progressContainer, convertBtn, resultArea, previewArea } = this.elements;
+                progressContainer.classList.remove('hidden');
+                resultArea.classList.add('hidden');
+                previewArea.classList.add('hidden');
+                convertBtn.disabled = true;
+                this.updateProgress(0, 'Starting conversion...');
+
+                try {
+                    const arrayBuffer = await this.selectedFile.arrayBuffer();
+                    this.updateProgress(10, 'Loading PDF document...');
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    const totalPages = pdf.numPages;
+                    let fullText = '';
+
+                    for (let i = 1; i <= totalPages; i++) {
+                        const page = await pdf.getPage(i);
+                        let textContent = await page.getTextContent();
+                        let pageText = textContent.items.map(item => item.str).join(' ');
+
+                        // Heuristic: If direct text extraction yields very little, assume it's a scanned/image page and use OCR.
+                        if (pageText.trim().length < 20) {
+                            this.updateProgress(20 + (i / totalPages) * 70, `Page ${i}/${totalPages}: No text found, performing OCR...`);
+                            pageText = await this.performOCR(page);
+                        } else {
+                            this.updateProgress(20 + (i / totalPages) * 70, `Page ${i}/${totalPages}: Extracting text...`);
+                        }
+                        fullText += pageText + '\n\n';
+                    }
+
+                    this.updateProgress(90, 'Formatting document...');
+                    this.convertedContent = fullText;
+                    
+                    this.showPreview(this.convertedContent);
+                    this.updateProgress(100, 'Conversion Complete!');
+
+                    setTimeout(() => {
+                        progressContainer.classList.add('hidden');
+                        resultArea.classList.remove('hidden');
+                        convertBtn.disabled = false;
+                    }, 500);
+
+                } catch (error) {
+                    console.error('Conversion failed:', error);
+                    this.showModal(true, 'Conversion Failed', `An unexpected error occurred. Please check the console for details. Error: ${error.message}`);
+                    progressContainer.classList.add('hidden');
+                    convertBtn.disabled = false;
+                }
+            }
+
+            async performOCR(page) {
+                const ocrLanguage = this.elements.ocrLanguage.value;
+                const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better OCR accuracy
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+                const { data: { text } } = await Tesseract.recognize(canvas, ocrLanguage, {
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                           this.elements.progressText.textContent = `OCR on page: ${Math.round(m.progress * 100)}%`;
+                        }
+                    }
+                });
+                return text;
+            }
+
+            showPreview(content) {
+                const { previewArea, previewContent } = this.elements;
+                const previewText = content.substring(0, 1500) + (content.length > 1500 ? '...' : '');
+                previewContent.textContent = previewText;
+                previewArea.classList.remove('hidden');
+            }
+
+            // --- File Download Logic ---
+
+            downloadFile() {
+                if (!this.convertedContent) return;
+                const outputFormat = this.elements.outputFormat.value;
+                const baseFileName = this.selectedFile.name.replace(/\.pdf$/i, '');
+
+                if (outputFormat === 'docx') {
+                    // The client-side method generates an HTML-based .doc file, which is compatible with Word.
+                    // We name it .doc to avoid the "unreadable content" error in Word.
+                    const fileName = `${baseFileName}_converted.doc`;
+                    this.downloadAsDocx(fileName);
+                } else {
+                    const fileName = `${baseFileName}_converted.txt`;
+                    this.downloadAsTxt(fileName);
+                }
+            }
+
+            downloadAsTxt(fileName) {
+                const blob = new Blob([this.convertedContent], { type: 'text/plain;charset=utf-8' });
+                this.triggerDownload(blob, fileName);
+            }
+
+            downloadAsDocx(fileName) {
+                // This creates an MHTML (or "Word HTML") file, which Word can open and interpret.
+                // It's a client-side friendly way to create a formatted document without a complex library or backend.
+                const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Converted Document</title></head><body>`;
+                const footer = "</body></html>";
+                
+                // Basic heuristic to identify headings (all-caps lines) vs paragraphs
+                let contentHtml = this.convertedContent.split('\n\n').map(p => {
+                    const trimmed = p.trim();
+                    if (trimmed.length === 0) return '';
+                    // Escape basic HTML characters
+                    const escaped = trimmed.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    if (trimmed.length < 100 && trimmed === trimmed.toUpperCase()) {
+                        return `<h2>${escaped}</h2>`; // A line in all caps is likely a heading
+                    }
+                    return `<p>${escaped.replace(/\n/g, '<br>')}</p>`; // Regular paragraph, preserve line breaks
+                }).join('');
+
+                const sourceHtml = header + contentHtml + footer;
+                const blob = new Blob([sourceHtml], { type: 'application/msword' });
+                this.triggerDownload(blob, fileName);
+            }
+
+            triggerDownload(blob, fileName) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        }
+
+        // Initialize the app once the DOM is fully loaded.
+        document.addEventListener('DOMContentLoaded', () => {
+            new PDFToWordConverter();
+        });
+    </script>
+</body>
+</html>
